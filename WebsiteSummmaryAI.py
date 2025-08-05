@@ -17,6 +17,8 @@ from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 
 # Getting Youtube Video contens (Subtitles)
+from pytubefix import YouTube
+import srt
 
 # Static Propmts
 SUMMARY_PROMPT = """以下のコンテンツについて300文字以内で要約してください
@@ -76,27 +78,55 @@ def validate_url(url):
 	except ValueError:
 		return False
 
+def get_content_from_normal_website(url):
+	try:
+		with st.spinner("Fetching Website data"):
+			response = requests.get(url)
+			response.raise_for_status()
+			soup = BeautifulSoup(response.text, 'html.parser')
+			if soup.main:
+				return soup.main.get_text()
+			elif soup.article:
+				return soup.article.get_text()
+			else:
+				return soup.body.get_text()
+	except requests.RequestException as e:
+		st.write(traceback.format_exc())
+		return None
+
+def get_content_from_youtube(url):
+	try:
+		# Youtubeの字幕などを取得するLoader
+		yt = YouTube(url)
+		captions = yt.captions
+
+		if yt.captions:
+			caption = yt.captions['a.ja']  # 'ja' for Japanese subtitles
+			if not caption:
+				caption = yt.captions['a.en']
+			caption_srt = caption.generate_srt_captions()
+			# SRTからインデックスと時刻を除去
+			caption_parsed = srt.parse(caption_srt)
+			# SRTの内容をテキストに変換
+			caption_text = "\n".join(f"{item.content}" for item in caption_parsed)
+			return caption_text
+		else:
+			return None
+	except:
+		st.write(traceback.format_exc())
+		return None
+
+
 def get_content(url):
 	# get content from URL
-	if st.session_state.url_type == "normal":
-		try:
-			with st.spinner("Fetching Website data"):
-				response = requests.get(url)
-				response.raise_for_status()
-				soup = BeautifulSoup(response.text, 'html.parser')
-				if soup.main:
-					return soup.main.get_text()
-				elif soup.article:
-					return soup.article.get_text()
-				else:
-					return soup.body.get_text()
-		except requests.RequestException as e:
-			st.write(traceback.format_exc())
-			return None
-	elif st.session_state.url_type == "youtube":
-		# Placeholder for YouTube video content extraction
-		st.error("YouTube video content extraction is not implemented yet.")
-		return None
+	with st.spinner("Fetching Content"):
+		if st.session_state.url_type == "normal":
+			content = get_content_from_normal_website(url)
+		elif st.session_state.url_type == "youtube":
+			content = get_content_from_youtube(url)
+		else:
+			content = None
+	return content
 
 # -----------------Main Function-----------------
 
